@@ -36,17 +36,44 @@ Data source / 数据源: [zip.cm.edu.kg/all.txt](https://zip.cm.edu.kg/all.txt) 
 
 ## Deployment / 部署
 
-Single file, zero dependencies. 任选一种：
+Single file, zero dependencies. Three ways to deploy — the Pages + GitHub way is recommended because updates then ship themselves. 单文件、零依赖，共三种部署方式，推荐 Pages + GitHub，之后更新全自动。
 
-1. **Workers console** — create a Worker, paste the whole `_worker.js`, deploy. 在 Cloudflare 控制台新建 Worker，粘贴 `_worker.js` 全部内容后部署。
-2. **Pages** — put `_worker.js` in your project root; Pages picks it up automatically. 放到 Pages 项目根目录即可。
-3. **Wrangler** — this repo ships a `wrangler.toml`:
+### A. Cloudflare Pages + GitHub (recommended / 推荐)
 
-   ```bash
-   npx wrangler deploy
-   ```
+Connect the repository once; every later push to `main` redeploys automatically. 连接一次仓库，之后每次推送 `main` 自动重新部署：
 
-Binding a custom domain is recommended. 建议绑定自定义域名。
+1. In the Cloudflare Dashboard, go to **Workers & Pages** → **Create** → **Pages** → **Connect to Git**, sign in to GitHub and select this repository.
+   在 Cloudflare 控制台进入 **Workers & Pages** → **Create** → **Pages** → **Connect to Git**，授权 GitHub 并选中本仓库。
+2. Fill in the build settings as follows. 构建设置按下表填写：
+
+   | Setting / 设置 | Value / 值 |
+   | --- | --- |
+   | Production branch / 生产分支 | `main` |
+   | Framework preset / 框架预设 | `None` |
+   | Build command / 构建命令 | *(leave empty / 留空)* |
+   | Build output directory / 构建输出目录 | `/` (root / 根目录) |
+
+3. Click **Save and Deploy**. The `_worker.js` in the repository root is picked up automatically (Pages advanced mode) — no build step is needed.
+   点 **Save and Deploy**。根目录的 `_worker.js` 会被自动识别（Pages 高级模式），无需任何构建。
+4. From now on, pushing to `main` triggers a new production deployment, and pull requests get their own preview deployments.
+   此后推送 `main` 自动上线新版，PR 分支会生成各自的预览部署。
+5. Optional: bind a custom domain in the Pages project under **Custom domains**.
+   可选：在 Pages 项目的 **Custom domains** 里绑定自定义域名。
+
+### B. Workers console (paste) / 控制台粘贴
+
+Create a Worker in the Cloudflare Dashboard, paste the whole `_worker.js`, and deploy. Note this method does **not** follow the repository — repeat the paste after each update.
+在 Cloudflare 控制台新建 Worker，粘贴 `_worker.js` 全部内容后部署。注意此方式不跟随仓库更新，每次更新后要重新粘贴。
+
+### C. Wrangler CLI
+
+This repo ships a `wrangler.toml`:
+
+```bash
+npx wrangler deploy
+```
+
+Binding a custom domain is recommended for all methods. 三种方式都建议绑定自定义域名。
 
 ## Usage / 使用
 
