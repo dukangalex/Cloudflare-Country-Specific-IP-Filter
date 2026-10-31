@@ -1,0 +1,6 @@
+# Cloudflare Workers 部署配置 (wrangler deploy 时使用;
+# 也可以直接把 _worker.js 粘贴到 Workers / Pages 控制台部署, 本文件非必需)
+name = "cloudflare-country-specific-ip-filter"
+main = "_worker.js"
+compatibility_date = "2025-01-01"
+workers_dev = true

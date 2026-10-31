@@ -1,0 +1,1 @@
+{"description":"Filter Cloudflare preferred IPs by country/region — single-file Cloudflare Worker.","name":"cloudflare-country-specific-ip-filter","private":true,"scripts":{"test":"node --test test/*.test.mjs"},"type":"module","version":"2.0.0"}

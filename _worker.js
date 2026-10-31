@@ -1,6 +1,34 @@
 /**
- * 地区名称映射 (全球主要 Cloudflare 节点所在国家/地区)
+ * Cloudflare Country-Specific IP Filter
+ *
+ * 按国家/地区筛选 Cloudflare 优选 IP 的单文件 Worker。
+ * 数据源: https://zip.cm.edu.kg/all.txt (每行格式: IP:PORT#CC, CC 为两位地区代码)
+ *
+ * 路由:
+ *   /CFnew/<地区-地区>?limit=N&base64=1      CFnew 风格节点列表
+ *   /edgetunnel/<地区-地区>?limit=N&base64=1 edgetunnel 风格节点列表
+ *   /?api=1&region=JP,US&format=cf_line_short&limit=N&base64=1
+ *   /?get_regions=1                          全部地区代码 (按 IP 数量降序)
+ *   /                                        网页界面
  */
+
+// ---------------------------------------------------------------------------
+// 配置
+// ---------------------------------------------------------------------------
+const UPSTREAM_URL = 'https://zip.cm.edu.kg/all.txt';
+const DATASET_TTL_MS = 5 * 60 * 1000; // 上游数据在 isolate 内缓存 5 分钟, 避免每次请求都拉 350KB+
+const UPSTREAM_TIMEOUT_MS = 8000;     // 上游请求超时
+const MAX_LIMIT = 5000;               // 单地区 limit 上限 (防滥用, 远大于任一地区现有池子)
+
+const CORS_HEADERS = {
+    'Access-Control-Allow-Origin': '*',
+    'Access-Control-Allow-Methods': 'GET, HEAD, POST, OPTIONS',
+    'Access-Control-Allow-Headers': '*',
+    'Access-Control-Max-Age': '86400',
+};
+
+const NO_STORE = 'no-store, no-cache, must-revalidate, proxy-revalidate, max-age=0';
+
 const REGION_MAP = {
     // 亚太地区 (Asia Pacific)
     'JP': '日本', 'KR': '韩国', 'SG': '新加坡', 'HK': '香港', 'TW': '台湾',
@@ -75,7 +103,7 @@ const REGION_MAP = {
 function getFlagEmoji(code) {
     if (code === 'TW') return '🇹🇼';
     if (code === 'UK') return '🇬🇧';
-    if (!code || code.length !== 2) return '🇺🇳'; 
+    if (!code || code.length !== 2) return '🇺🇳';
     const codePoints = code.toUpperCase().split('').map(char => 127397 + char.charCodeAt());
     return String.fromCodePoint(...codePoints);
 }
@@ -88,161 +116,275 @@ function toSuperScript(num) {
     return num.toString().split('').map(c => supers[c] || c).join('');
 }
 
+/**
+ * Fisher-Yates 部分洗牌: 从 pool 中无偏随机抽取 count 个元素 (不改原数组)
+ */
+function sample(pool, count) {
+    const arr = [...pool];
+    const n = Math.min(count, arr.length);
+    for (let i = 0; i < n; i++) {
+        const j = i + Math.floor(Math.random() * (arr.length - i));
+        [arr[i], arr[j]] = [arr[j], arr[i]];
+    }
+    return arr.slice(0, n);
+}
+
+/** 解析 limit 参数: 非法/负数归 0 (不限制), 超过上限截断 */
+function parseLimit(searchParams) {
+    const n = Number.parseInt(searchParams.get('limit'), 10);
+    if (!Number.isFinite(n) || n < 0) return 0;
+    return Math.min(n, MAX_LIMIT);
+}
+
+/** 解析地区列表: 大写、去空、去重 (保持首次出现顺序) */
+function parseRegions(regionStr) {
+    let decoded = regionStr || '';
+    try { decoded = decodeURIComponent(decoded); } catch { /* 已解码或非法编码, 用原文继续 */ }
+    const seen = new Set();
+    const regions = [];
+    for (const part of decoded.split(/[,-]/)) {
+        const code = part.trim().toUpperCase();
+        if (code && !seen.has(code)) {
+            seen.add(code);
+            regions.push(code);
+        }
+    }
+    return regions;
+}
+
+/** UTF-8 安全的 base64 编码 (替代已废弃的 unescape 技巧) */
+function base64Utf8(str) {
+    const bytes = new TextEncoder().encode(str);
+    let bin = '';
+    const CHUNK = 0x8000;
+    for (let i = 0; i < bytes.length; i += CHUNK) {
+        bin += String.fromCharCode(...bytes.subarray(i, i + CHUNK));
+    }
+    return btoa(bin);
+}
+
+// ---------------------------------------------------------------------------
+// 数据层: 上游数据只拉取/解析一次, TTL 内复用; 并发请求合并为一次拉取;
+// 拉取失败时若有旧数据则降级用旧数据, 不让上游抖动直接打挂服务。
+// ---------------------------------------------------------------------------
+let datasetCache = null;    // { pools: Map<string, string[]>, regions: string[], total: number, fetchedAt: number }
+let datasetInflight = null; // Promise, 合并并发拉取
+
+function parseDataset(text) {
+    const pools = new Map();
+    const counts = {}; // 保持地区首次出现顺序, 供排序稳定
+    let total = 0;
+    const clean = text.replace(/^\uFEFF/, '');
+    for (const rawLine of clean.split('\n')) {
+        const line = rawLine.trim();
+        const hashIdx = line.indexOf('#');
+        if (hashIdx < 0) continue;
+        const ipPort = line.slice(0, hashIdx).trim();
+        const code = line.slice(hashIdx + 1).trim().toUpperCase();
+        // 只收合法的两位地区代码: 上游的 "#Unknown" 等异常标签会被
+        // 旧正则误读成地区 "U", 这里直接跳过无地区归属的条目
+        if (!/^[A-Z]{2}$/.test(code)) continue;
+        if (!/^\S+:\d+$/.test(ipPort)) continue;
+        let pool = pools.get(code);
+        if (!pool) {
+            pool = { list: [], seen: new Set() };
+            pools.set(code, pool);
+            counts[code] = 0;
+        }
+        if (pool.seen.has(ipPort)) continue; // 同地区内去重
+        pool.seen.add(ipPort);
+        pool.list.push(ipPort);
+        counts[code]++;
+        total++;
+    }
+    const flatPools = new Map();
+    for (const [code, pool] of pools) flatPools.set(code, pool.list);
+    // 按 IP 数量降序 (稳定排序, 数量相同保持数据源出现顺序)
+    const regions = Object.keys(counts).sort((a, b) => counts[b] - counts[a]);
+    return { pools: flatPools, regions, total };
+}
+
+async function loadDataset() {
+    if (datasetCache && Date.now() - datasetCache.fetchedAt < DATASET_TTL_MS) {
+        return datasetCache;
+    }
+    if (datasetInflight) return datasetInflight;
+    datasetInflight = (async () => {
+        try {
+            const init = {
+                headers: { 'User-Agent': 'Cloudflare-Country-Specific-IP-Filter/2.0' },
+                // 让 Cloudflare 边缘也缓存上游响应, 跨 isolate 共享
+                cf: { cacheTtl: 300, cacheEverything: true },
+            };
+            if (typeof AbortSignal !== 'undefined' && typeof AbortSignal.timeout === 'function') {
+                init.signal = AbortSignal.timeout(UPSTREAM_TIMEOUT_MS);
+            }
+            const res = await fetch(UPSTREAM_URL, init);
+            if (!res.ok) throw new Error(`upstream responded ${res.status}`);
+            const parsed = parseDataset(await res.text());
+            if (parsed.total === 0) throw new Error('upstream returned no usable entries');
+            datasetCache = { ...parsed, fetchedAt: Date.now() };
+            return datasetCache;
+        } catch (e) {
+            if (datasetCache) return datasetCache; // 降级: 用上次成功的数据
+            throw e;
+        } finally {
+            datasetInflight = null;
+        }
+    })();
+    return datasetInflight;
+}
+
+// ---------------------------------------------------------------------------
+// 响应辅助
+// ---------------------------------------------------------------------------
+function textResponse(body, status = 200, extraHeaders = {}) {
+    return new Response(body, {
+        status,
+        headers: {
+            'content-type': 'text/plain; charset=UTF-8',
+            'Cache-Control': NO_STORE,
+            ...CORS_HEADERS,
+            ...extraHeaders,
+        },
+    });
+}
+
+function jsonResponse(body, status = 200, extraHeaders = {}) {
+    return new Response(body, {
+        status,
+        headers: {
+            'content-type': 'application/json; charset=UTF-8',
+            ...CORS_HEADERS,
+            ...extraHeaders,
+        },
+    });
+}
+
+// ---------------------------------------------------------------------------
+// 请求处理
+// ---------------------------------------------------------------------------
 export default {
-    async fetch(request, env) {
+    async fetch(request) {
         if (request.method === 'OPTIONS') {
-            return new Response(null, {
-                headers: {
-                    'Access-Control-Allow-Origin': '*',
-                    'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
-                    'Access-Control-Allow-Headers': '*'
-                }
-            });
+            return new Response(null, { headers: CORS_HEADERS });
+        }
+        if (!['GET', 'HEAD', 'POST'].includes(request.method)) {
+            return textResponse('Method Not Allowed', 405, { Allow: 'GET, HEAD, POST, OPTIONS' });
         }
         const url = new URL(request.url);
+        const limit = parseLimit(url.searchParams);
 
-        // 获取 limit 参数
-        const limit = parseInt(url.searchParams.get('limit')) || 0;
-
-        // 路径路由
-        const rawPath = decodeURIComponent(url.pathname);
-        const pathMatches = rawPath.replace(/\/+$/, '')
-            .match(/^\/(CFnew|edgetunnel)\/(.+)$/);
-            
+        // 路径路由: /CFnew/JP-US 或 /edgetunnel/JP-US
+        let rawPath;
+        try {
+            rawPath = decodeURIComponent(url.pathname);
+        } catch {
+            return textResponse('Bad Request: malformed path encoding', 400);
+        }
+        const pathMatches = rawPath.replace(/\/+$/, '').match(/^\/(CFnew|edgetunnel)\/(.+)$/);
         if (pathMatches) {
-            const type = pathMatches[1];
-            const regions = pathMatches[2];
-            const format = type === 'CFnew' ? 'cf_line_short' : 'line';
-            return handleRawRequest(regions, format, limit, request.url);
+            const format = pathMatches[1] === 'CFnew' ? 'cf_line_short' : 'line';
+            return handleRawRequest(pathMatches[2], format, limit, url);
         }
 
         if (url.searchParams.has('api')) return handleApiRequest(url);
         if (url.searchParams.has('get_regions')) return handleGetRegions();
-        
-        return new Response(getHtml(), { headers: { 'content-type': 'text/html; charset=UTF-8' } });
+
+        return new Response(getHtml(), {
+            headers: {
+                'content-type': 'text/html; charset=UTF-8',
+                'X-Content-Type-Options': 'nosniff',
+                'Referrer-Policy': 'strict-origin-when-cross-origin',
+                ...CORS_HEADERS,
+            },
+        });
     }
 };
 
 async function handleGetRegions() {
     try {
-        const res = await fetch("https://zip.cm.edu.kg/all.txt");
-        const text = await res.text();
-        const matches = text.match(/#[A-Z]+/g) || [];
-        const counts = {};
-        matches.forEach(tag => {
-            const region = tag.replace('#', '');
-            counts[region] = (counts[region] || 0) + 1;
+        const dataset = await loadDataset();
+        return jsonResponse(JSON.stringify(dataset.regions), 200, {
+            'Cache-Control': 'public, max-age=60',
         });
-        const regions = Object.keys(counts).sort((a, b) => counts[b] - counts[a]);
-        return new Response(JSON.stringify(regions), { headers: { 'content-type': 'application/json' } });
     } catch (e) {
-        return new Response('[]', { headers: { 'content-type': 'application/json' } });
+        return jsonResponse('[]', 502);
     }
 }
 
 async function handleApiRequest(url) {
-    const regions = url.searchParams.get('region')?.split(',') || [];
+    const regions = url.searchParams.get('region') || '';
     const format = url.searchParams.get('format') || 'line';
-    return handleRawRequest(regions.join(','), format, 0, url.toString());
+    const limit = parseLimit(url.searchParams); // 修复: 旧版 API 路由把 limit 写死为 0, 参数被忽略
+    return handleRawRequest(regions, format, limit, url);
 }
 
-async function handleRawRequest(regionStr, format, limit = 0, requestUrl = null) {
-    const decoded = decodeURIComponent(regionStr);
-    
-    const targetRegions = decoded.split(/[,-]/)
-                                 .map(r => r.trim().toUpperCase())
-                                 .filter(r => r);
-    
+async function handleRawRequest(regionStr, format, limit = 0, sourceUrl = null) {
+    const targetRegions = parseRegions(regionStr);
+    const fmt = String(format || 'line').toLowerCase();
+
     let needBase64 = false;
-    if (requestUrl) {
-        const urlObj = new URL(requestUrl);
-        needBase64 = urlObj.searchParams.has('base64') && urlObj.searchParams.get('base64') !== '0';
+    if (sourceUrl) {
+        needBase64 = sourceUrl.searchParams.has('base64') && sourceUrl.searchParams.get('base64') !== '0';
     }
 
+    let dataset;
     try {
-        const response = await fetch("https://zip.cm.edu.kg/all.txt");
-        let text = await response.text();
-        text = text.replace(/^\uFEFF/, '');
-        const lines = text.split('\n');
-
-        const regionPools = {};
-        
-        targetRegions.forEach(r => regionPools[r] = []);
-
-        for (const line of lines) {
-            if (!line.includes('#')) continue;
-            const parts = line.split('#');
-            const code = parts[1] ? parts[1].trim().toUpperCase() : '';
-            const ipPort = parts[0].trim();
-            
-            if (regionPools[code]) {
-                regionPools[code].push({ line, code, ipPort });
-            }
-        }
-
-        let selectedItems = [];
-
-        for (const region of targetRegions) {
-            const pool = regionPools[region];
-            
-            if (!pool || pool.length === 0) continue;
-            if (limit > 0 && pool.length > limit) {
-                const shuffled = [...pool].sort(() => 0.5 - Math.random());
-                selectedItems.push(...shuffled.slice(0, limit));
-            } else {
-                selectedItems.push(...pool);
-            }
-        }
-
-        const processed = [];
-        const isCFStyle = format.startsWith('cf') || format === 'comma';
-        const isShortName = format.includes('short');
-        const isLineSeparated = format.includes('line');
-        const regionCounters = {}; 
-
-        for (const item of selectedItems) {
-            const { line, code, ipPort } = item;
-            
-            const flag = getFlagEmoji(code);
-            const name = REGION_MAP[code] || code;
-
-            if (isCFStyle) {
-                regionCounters[code] = (regionCounters[code] || 0) + 1;
-                const countStr = toSuperScript(regionCounters[code]);
-                const port = ipPort.split(':')[1] || ''; 
-                
-                let nodeName = `${flag} ${name}${countStr}`;
-                if (!isShortName) nodeName += `-${port}`;
-                
-                processed.push(`${ipPort}#${nodeName}`);
-            } else {
-                processed.push(`${ipPort}#${flag} ${name} ${ipPort}`);
-            }
-        }
-
-        const separator = (format.includes('comma') && !isLineSeparated) ? ',' : '\n';
-        let resultStr = processed.join(separator);
-
-        if (needBase64) {
-            resultStr = btoa(unescape(encodeURIComponent(resultStr)));
-        }
-
-        return new Response(resultStr, { 
-            headers: { 
-                'content-type': 'text/plain; charset=UTF-8',
-                'Access-Control-Allow-Origin': '*',
-                'Access-Control-Allow-Methods': 'GET,HEAD,POST,OPTIONS',
-                'Cache-Control': 'no-store, no-cache, must-revalidate, proxy-revalidate, max-age=0',
-            } 
-        });
-
+        dataset = await loadDataset();
     } catch (e) {
-        return new Response("Error fetching data: " + e.message, { status: 500 });
+        return textResponse('Error fetching data: ' + e.message, 502);
     }
+
+    const selectedItems = [];
+    for (const region of targetRegions) {
+        const pool = dataset.pools.get(region);
+        if (!pool || pool.length === 0) continue;
+        if (limit > 0 && pool.length > limit) {
+            for (const ipPort of sample(pool, limit)) selectedItems.push({ code: region, ipPort });
+        } else {
+            for (const ipPort of pool) selectedItems.push({ code: region, ipPort });
+        }
+    }
+
+    const processed = [];
+    const isCFStyle = fmt.startsWith('cf') || fmt === 'comma';
+    const isShortName = fmt.includes('short');
+    const isLineSeparated = fmt.includes('line');
+    const regionCounters = {};
+
+    for (const { code, ipPort } of selectedItems) {
+        const flag = getFlagEmoji(code);
+        const name = REGION_MAP[code] || code;
+
+        if (isCFStyle) {
+            regionCounters[code] = (regionCounters[code] || 0) + 1;
+            const countStr = toSuperScript(regionCounters[code]);
+            const port = ipPort.slice(ipPort.lastIndexOf(':') + 1);
+
+            let nodeName = `${flag} ${name}${countStr}`;
+            if (!isShortName) nodeName += `-${port}`;
+
+            processed.push(`${ipPort}#${nodeName}`);
+        } else {
+            processed.push(`${ipPort}#${flag} ${name} ${ipPort}`);
+        }
+    }
+
+    const separator = (fmt.includes('comma') && !isLineSeparated) ? ',' : '\n';
+    let resultStr = processed.join(separator);
+
+    if (needBase64) {
+        resultStr = base64Utf8(resultStr);
+    }
+
+    return textResponse(resultStr);
 }
 
+let _htmlCache = null;
 function getHtml() {
-    return `
+    if (_htmlCache) return _htmlCache;
+    _htmlCache = `
 <!DOCTYPE html>
 <html lang="zh-CN">
 <head>
@@ -254,7 +396,9 @@ function getHtml() {
     <script>
         tailwind.config = { darkMode: 'class' }
     </script>
-    <script src="https://unpkg.com/lucide@latest"></script>
+    <link rel="preconnect" href="https://cdn.tailwindcss.com">
+    <link rel="preconnect" href="https://unpkg.com">
+    <script src="https://unpkg.com/lucide@0.469.0/dist/umd/lucide.min.js"></script>
     <style>
         @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&family=Fira+Code&display=swap');
         body { font-family: 'Inter', sans-serif; transition: background 0.3s, color 0.3s; }
@@ -356,7 +500,7 @@ function getHtml() {
 <div class="flex items-center gap-3">
 <div class="relative">
 <button id="githubBtn" 
-onclick="window.open('https://github.com/alienwaregf/Cloudflare-Country-Specific-IP-Filter', '_blank')"
+onclick="window.open('https://github.com/dukangalex/Cloudflare-Country-Specific-IP-Filter', '_blank')"
 class="group h-12 flex items-center rounded-2xl bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-200 shadow-lg ring-1 ring-black/5 dark:ring-white/10 hover:bg-slate-50 dark:hover:bg-slate-700 transition-all px-3.5 hover:px-5 hover:gap-3 ease-out duration-500 hover:duration-1000">
 <i data-lucide="github" class="w-5 h-5 -rotate-0 group-hover:-rotate-12 transition-transform duration-500 flex-shrink-0"></i>
 <span class="max-w-0 opacity-0 group-hover:max-w-xs group-hover:opacity-100 transition-all ease-out whitespace-nowrap font-bold overflow-hidden duration-500 hover:duration-1000">GitHub项目地址</span>
@@ -458,7 +602,7 @@ class="group h-12 flex items-center rounded-2xl bg-white dark:bg-slate-800 borde
                 setTimeout(() => toast.remove(), 300);
             }, 3000);
         }
-        const slotAudio = new Audio("https://github.com/alienwaregf/CF-Custom-IPs-By-Country/raw/refs/heads/main/Audio/%E8%80%81%E8%99%8E%E6%9C%BA2%E7%A7%92.mp3");
+        const slotAudio = new Audio("https://raw.githubusercontent.com/dukangalex/Cloudflare-Country-Specific-IP-Filter/main/Audio/%E8%80%81%E8%99%8E%E6%9C%BA2%E7%A7%92.mp3");
         slotAudio.preload = 'auto';
         slotAudio.volume = 1;
 
@@ -475,13 +619,17 @@ class="group h-12 flex items-center rounded-2xl bg-white dark:bg-slate-800 borde
                 const res = await fetch('?get_regions=1');
                 allRegions = await res.json();
                 allRegions = allRegions.filter(r => r !== 'CN');
+                if(allRegions.length === 0) throw new Error('empty region list');
                 const grid = document.getElementById('regionGrid');
                 grid.innerHTML = allRegions.map(r => \`
                     <button onclick="toggle('\${r}')" id="r-\${r}" class="region-card p-3 rounded-2xl bg-slate-50 dark:bg-slate-800/50 flex flex-col items-center gap-1 border border-slate-200 dark:border-slate-700 hover:bg-slate-100 dark:hover:bg-slate-700/50 cursor-pointer">
                         <span class="text-xl">\${getFlag(r)}</span><span class="text-[10px] font-bold opacity-70">\${regionMap[r] || r}</span>
                     </button>\`).join('');
                 lucide.createIcons();
-            } catch(e) { console.error(e); }
+            } catch(e) {
+                console.error(e);
+                document.getElementById('regionGrid').innerHTML = '<div class="col-span-full py-10 text-center text-red-400 font-bold">数据源加载失败, 请稍后刷新页面重试</div>';
+            }
         }
         function toggle(r) {
             const el = document.getElementById('r-' + r);
@@ -505,7 +653,9 @@ class="group h-12 flex items-center rounded-2xl bg-white dark:bg-slate-800 borde
         async function fetchIps() {
             if(selected.length === 0) { showToast('请至少选择一个地区！', 'error'); return; }
             try {
-                const res = await fetch(\`?api=1&region=\${selected.join(',')}&format=\${fmt}\`);
+                const limitVal = parseInt(document.getElementById('limitInput').value, 10);
+                const limit = Number.isFinite(limitVal) && limitVal > 0 ? limitVal : 0;
+                const res = await fetch(\`?api=1&region=\${selected.join(',')}&format=\${fmt}&limit=\${limit}\`);
                 const data = await res.text();
                 document.getElementById('out').value = data;
                 const isComma = fmt.includes('comma') || fmt === 'comma';
@@ -515,11 +665,21 @@ class="group h-12 flex items-center rounded-2xl bg-white dark:bg-slate-800 borde
                 showToast(\`成功获取 \${count} 个节点 IP\`, 'success');
             } catch(e) { showToast('获取数据失败，请重试', 'error'); console.error(e); }
         }
-        function copy() {
+        async function copy() {
             const out = document.getElementById('out');
             if(!out.value) { showToast('没有内容可复制', 'error'); return; }
-            navigator.clipboard.writeText(out.value);
-            showToast('内容已复制到剪贴板', 'success');
+            try {
+                await navigator.clipboard.writeText(out.value);
+                showToast('内容已复制到剪贴板', 'success');
+            } catch(e) {
+                out.select();
+                try {
+                    document.execCommand('copy');
+                    showToast('内容已复制到剪贴板', 'success');
+                } catch(e2) {
+                    showToast('自动复制失败, 请长按/右键手动复制', 'error');
+                }
+            }
         }
         // 🎰 随机摇号功能
         async function randomSelect() {
@@ -637,4 +797,5 @@ class="group h-12 flex items-center rounded-2xl bg-white dark:bg-slate-800 borde
 </body>
 </html>
     `;
+    return _htmlCache;
 }
