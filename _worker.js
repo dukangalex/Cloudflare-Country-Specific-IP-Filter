@@ -1589,7 +1589,17 @@ video {
             from { transform: translateY(0); opacity: 1; }
             to { transform: translateY(-20px); opacity: 0; }
         }
-    </style>
+    
+/* edgetunnel-ipfilter 结构层 (2.2): 双栏工作台 — 左地区栏 + 右结果区, 扁平卡片 */
+main{max-width:1400px !important;display:grid !important;grid-template-columns:380px minmax(0,1fr) !important;gap:18px !important;align-items:start}
+main > div{border-radius:10px !important;box-shadow:none !important}
+main [class*="rounded-t-"]{border-top-left-radius:10px !important;border-top-right-radius:10px !important}
+#regionGrid{grid-template-columns:repeat(2,minmax(0,1fr)) !important;gap:6px !important;max-height:520px;overflow:auto;padding-right:4px}
+.region-card{flex-direction:row !important;justify-content:flex-start !important;align-items:center !important;gap:9px !important;padding:7px 10px !important;border-radius:8px !important;text-align:left !important}
+main > div:first-child .flex.gap-3{flex-wrap:wrap}
+nav{border-bottom:1px solid #1f2a2f}
+@media (max-width:920px){main{grid-template-columns:minmax(0,1fr) !important}#regionGrid{max-height:none}}
+</style>
 </head>
 <body class="light min-h-screen pb-10" onclick="closeAllDropdowns(event)">
     <div id="toast-container"></div>
