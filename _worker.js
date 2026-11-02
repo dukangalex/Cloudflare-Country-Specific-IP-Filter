@@ -1635,6 +1635,16 @@ class="group h-12 flex items-center rounded-2xl bg-white dark:bg-slate-800 borde
         </div>
     </nav>
     <main class="max-w-5xl mx-auto px-4 md:px-6 flex flex-col gap-6">
+        <div class="rounded-[2rem] glass shadow-xl border border-teal-500/40 dark:border-teal-500/40 px-6 py-5" style="background:linear-gradient(135deg,rgba(20,184,166,.14),rgba(37,99,235,.10))">
+            <div class="text-lg md:text-xl font-bold flex items-center gap-2"><span>🌏</span><span>按国家筛选优选 IP</span><span class="text-xs font-normal opacity-60">从 Cloudflare 优选 IP 池按国家/地区挑节点，生成可直接导入客户端的节点列表</span></div>
+            <div class="mt-3 flex flex-wrap items-center gap-2 text-[13px]">
+                <span class="px-3 py-1.5 rounded-full font-bold" style="background:rgba(20,184,166,.18);border:1px solid rgba(20,184,166,.55)">① 点选下方地区卡片（可多选）</span>
+                <span class="opacity-50">→</span>
+                <span class="px-3 py-1.5 rounded-full font-bold" style="background:rgba(20,184,166,.18);border:1px solid rgba(20,184,166,.55)">② 节点自动提取到下方结果区</span>
+                <span class="opacity-50">→</span>
+                <span class="px-3 py-1.5 rounded-full font-bold" style="background:rgba(20,184,166,.18);border:1px solid rgba(20,184,166,.55)">③ 点「复制全部」或用「API 地址」接入</span>
+            </div>
+        </div>
         <div class="bg-white dark:bg-slate-900 p-6 md:p-8 rounded-[2rem] glass shadow-xl">
             <div class="flex flex-col md:flex-row justify-between items-start md:items-end mb-6 gap-4">
                 <div><h2 class="text-xs font-bold text-slate-400 uppercase tracking-widest mb-1">全球节点</h2><p class="text-sm opacity-60">点击下方卡片选择要提取的地区 (按 IP 数量排序)</p></div>
@@ -1650,7 +1660,7 @@ class="group h-12 flex items-center rounded-2xl bg-white dark:bg-slate-800 borde
         
         <div class="bg-white dark:bg-slate-900 rounded-[2rem] glass shadow-xl border border-slate-200 dark:border-slate-800">
         <div class="rounded-t-[2rem] px-6 py-4 border-b border-slate-50 dark:border-slate-800 flex flex-col sm:flex-row justify-between items-center bg-slate-50/50 dark:bg-slate-800/50 gap-4 relative">
-        <div class="flex items-center gap-3 self-start sm:self-center"><svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="text-blue-500"><polyline points="4 17 10 11 4 5"/><line x1="12" x2="20" y1="19" y2="19"/></svg><span id="stats" class="text-xs font-bold opacity-40 uppercase tracking-tighter italic font-mono">WAITING FOR INPUT...</span></div>
+        <div class="flex items-center gap-3 self-start sm:self-center"><svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="text-blue-500"><polyline points="4 17 10 11 4 5"/><line x1="12" x2="20" y1="19" y2="19"/></svg><span id="stats" class="text-xs font-bold opacity-60">先点选地区卡片，结果会自动出现在这里</span></div>
         
         <div class="flex items-center gap-2 w-full sm:w-auto z-10">
                     <div class="flex items-center bg-white dark:bg-slate-700 border border-slate-200 dark:border-slate-600 rounded-lg px-3 py-2 shadow-sm mr-1 h-[34px]" title="单地区节点数量上限 (0为不限制)">
@@ -1676,7 +1686,7 @@ class="group h-12 flex items-center rounded-2xl bg-white dark:bg-slate-800 borde
                     </div>
                 </div>
             </div>
-            <div class="px-6 pt-5"><div class="text-[11px] font-bold opacity-50 uppercase tracking-wider mb-2">提取格式 · 选中地区后自动提取，点击可切换格式并重新提取</div><div class="grid grid-cols-2 gap-4">
+            <div class="px-6 pt-5"><div class="text-[11px] font-bold opacity-50 uppercase tracking-wider mb-2">提取格式 · 选中地区后自动提取，点击可切换格式并重新提取</div><div style="display:grid;grid-template-columns:1fr 1fr;gap:16px">
               <button onclick="autoRun('cf_comma_short')" class="btn-matrix h-16 text-lg font-bold flex items-center justify-center gap-3 cursor-pointer"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="w-6 h-6"><path d="m7 11 2-2-2-2"/><path d="M11 13h4"/><rect width="18" height="18" x="3" y="3" rx="2" ry="2"/></svg><span>CFnew</span></button>
               <button onclick="autoRun('cf_line_short')" class="btn-racing h-16 text-xl flex items-center justify-center gap-3 cursor-pointer"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="w-6 h-6"><path d="M4 14a1 1 0 0 1-.78-1.63l9.9-10.2a.5.5 0 0 1 .86.46l-1.92 6.02A1 1 0 0 0 13 10h7a1 1 0 0 1 .78 1.63l-9.9 10.2a.5.5 0 0 1-.86-.46l1.92-6.02A1 1 0 0 0 11 14z"/></svg><span>edgetunnel</span></button>
             </div></div>
@@ -1733,7 +1743,7 @@ class="group h-12 flex items-center rounded-2xl bg-white dark:bg-slate-800 borde
             clearTimeout(runTimer);
             runTimer = setTimeout(() => {
                 if (selected.length) { autoRun(curFmt, true); }
-                else { document.getElementById('out').value = ''; document.getElementById('stats').innerText = 'WAITING FOR INPUT...'; }
+                else { document.getElementById('out').value = ''; document.getElementById('stats').innerText = '先点选地区卡片，结果会自动出现在这里'; }
             }, 450);
         }
         async function init() {
