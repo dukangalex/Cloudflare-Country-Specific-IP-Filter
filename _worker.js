@@ -1592,10 +1592,10 @@ video {
         }
     
 /* edgetunnel-ipfilter 结构层 (2.2): 双栏工作台 — 左地区栏 + 右结果区, 扁平卡片 */
-main{max-width:1400px !important;display:grid !important;grid-template-columns:380px minmax(0,1fr) !important;gap:18px !important;align-items:start}
+main{max-width:1400px !important;display:grid !important;grid-template-columns:minmax(0,1fr) !important;gap:18px !important;align-items:start}
 main > div{border-radius:10px !important;box-shadow:none !important}
 main [class*="rounded-t-"]{border-top-left-radius:10px !important;border-top-right-radius:10px !important}
-#regionGrid{grid-template-columns:repeat(2,minmax(0,1fr)) !important;gap:6px !important;max-height:520px;overflow:auto;padding-right:4px}
+#regionGrid{grid-template-columns:repeat(auto-fill,minmax(118px,1fr)) !important;gap:6px !important;max-height:none;overflow:visible;padding-right:0}
 .region-card{flex-direction:row !important;justify-content:flex-start !important;align-items:center !important;gap:9px !important;padding:7px 10px !important;border-radius:8px !important;text-align:left !important}
 main > div:first-child .flex.gap-3{flex-wrap:wrap}
 nav{border-bottom:1px solid #1f2a2f}
@@ -1645,10 +1645,6 @@ class="group h-12 flex items-center rounded-2xl bg-white dark:bg-slate-800 borde
                 <button onclick="selectAll()" class="w-full md:w-auto px-6 py-2 rounded-xl bg-slate-100 dark:bg-slate-800 text-xs font-bold text-blue-600 hover:opacity-70 transition">全选/取消</button>
             </div>            </div>
             <div class="grid grid-cols-3 sm:grid-cols-4 md:grid-cols-6 lg:grid-cols-8 gap-3 p-2" id="regionGrid"><div class="col-span-full py-10 text-center animate-pulse text-slate-400">正在同步全球数据源...</div></div>
-            <div class="mt-10 grid grid-cols-1 md:grid-cols-2 gap-6">
-              <button onclick="autoRun('cf_comma_short')" class="btn-matrix h-16 text-lg font-bold flex items-center justify-center gap-3 cursor-pointer"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="w-6 h-6"><path d="m7 11 2-2-2-2"/><path d="M11 13h4"/><rect width="18" height="18" x="3" y="3" rx="2" ry="2"/></svg><span>CFnew</span></button>
-              <button onclick="autoRun('cf_line_short')" class="btn-racing h-16 text-xl flex items-center justify-center gap-3 cursor-pointer"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="w-6 h-6"><path d="M4 14a1 1 0 0 1-.78-1.63l9.9-10.2a.5.5 0 0 1 .86.46l-1.92 6.02A1 1 0 0 0 13 10h7a1 1 0 0 1 .78 1.63l-9.9 10.2a.5.5 0 0 1-.86-.46l1.92-6.02A1 1 0 0 0 11 14z"/></svg><span>edgetunnel</span></button>
-            </div>
             <div id="loadingState" class="hidden text-center py-4 text-slate-500 animate-pulse text-sm mt-2"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="animate-spin inline mr-2"><path d="M21 12a9 9 0 1 1-6.219-8.56"/></svg> 正在从全球边缘节点提取数据...</div>
         </div>
         
@@ -1680,7 +1676,11 @@ class="group h-12 flex items-center rounded-2xl bg-white dark:bg-slate-800 borde
                     </div>
                 </div>
             </div>
-            <textarea id="out" readonly class="w-full h-48 md:h-64 p-6 bg-transparent fira text-[13px] leading-relaxed outline-none resize-y text-slate-700 dark:text-slate-300 custom-scrollbar" placeholder="点击上方按钮提取，结果将显示在这里..."></textarea>
+            <div class="px-6 pt-5"><div class="text-[11px] font-bold opacity-50 uppercase tracking-wider mb-2">提取格式 · 选中地区后自动提取，点击可切换格式并重新提取</div><div class="grid grid-cols-2 gap-4">
+              <button onclick="autoRun('cf_comma_short')" class="btn-matrix h-16 text-lg font-bold flex items-center justify-center gap-3 cursor-pointer"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="w-6 h-6"><path d="m7 11 2-2-2-2"/><path d="M11 13h4"/><rect width="18" height="18" x="3" y="3" rx="2" ry="2"/></svg><span>CFnew</span></button>
+              <button onclick="autoRun('cf_line_short')" class="btn-racing h-16 text-xl flex items-center justify-center gap-3 cursor-pointer"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="w-6 h-6"><path d="M4 14a1 1 0 0 1-.78-1.63l9.9-10.2a.5.5 0 0 1 .86.46l-1.92 6.02A1 1 0 0 0 13 10h7a1 1 0 0 1 .78 1.63l-9.9 10.2a.5.5 0 0 1-.86-.46l1.92-6.02A1 1 0 0 0 11 14z"/></svg><span>edgetunnel</span></button>
+            </div></div>
+            <textarea id="out" readonly class="w-full h-48 md:h-64 p-6 bg-transparent fira text-[13px] leading-relaxed outline-none resize-y text-slate-700 dark:text-slate-300 custom-scrollbar" placeholder="在上方选择地区后将自动提取，结果显示在这里..."></textarea>
         </div>
     </main>
     <footer class="mt-12 py-8 border-t border-slate-200 dark:border-slate-800">
@@ -1728,6 +1728,14 @@ class="group h-12 flex items-center rounded-2xl bg-white dark:bg-slate-800 borde
         }
         const regionMap = ${JSON.stringify(REGION_MAP)};
         let selected = []; let fmt = 'line'; let allRegions = [];
+        let curFmt = 'cf_line_short'; let runTimer = null;
+        function scheduleRun() {
+            clearTimeout(runTimer);
+            runTimer = setTimeout(() => {
+                if (selected.length) { autoRun(curFmt, true); }
+                else { document.getElementById('out').value = ''; document.getElementById('stats').innerText = 'WAITING FOR INPUT...'; }
+            }, 450);
+        }
         async function init() {
             try {
                 const res = await fetch('?get_regions=1');
@@ -1750,22 +1758,24 @@ class="group h-12 flex items-center rounded-2xl bg-white dark:bg-slate-800 borde
             if(!el) return;
             if(selected.includes(r)) { selected = selected.filter(i => i !== r); el.classList.remove('active'); } 
             else { selected.push(r); el.classList.add('active'); }
+            scheduleRun();
         }
         function selectAll() {
             if(selected.length === allRegions.length) { selected = []; document.querySelectorAll('.region-card').forEach(el => el.classList.remove('active')); } 
             else { selected = [...allRegions]; document.querySelectorAll('.region-card').forEach(el => el.classList.add('active')); }
+            scheduleRun();
         }
-        async function autoRun(format) {
-            fmt = format;
+        async function autoRun(format, auto) {
+            fmt = format; curFmt = format;
             const btns = document.querySelectorAll('.btn-matrix, .btn-racing');
             btns.forEach(b => b.style.opacity = '0.5'); btns.forEach(b => b.style.pointerEvents = 'none');
             document.getElementById('loadingState').classList.remove('hidden');
-            await fetchIps();
+            await fetchIps(auto);
             btns.forEach(b => b.style.opacity = '1'); btns.forEach(b => b.style.pointerEvents = 'auto');
             document.getElementById('loadingState').classList.add('hidden');
         }
-        async function fetchIps() {
-            if(selected.length === 0) { showToast('请至少选择一个地区！', 'error'); return; }
+        async function fetchIps(auto) {
+            if(selected.length === 0) { if(!auto) showToast('请至少选择一个地区！', 'error'); return; }
             try {
                 const limitVal = parseInt(document.getElementById('limitInput').value, 10);
                 const limit = Number.isFinite(limitVal) && limitVal > 0 ? limitVal : 0;
@@ -1775,7 +1785,7 @@ class="group h-12 flex items-center rounded-2xl bg-white dark:bg-slate-800 borde
                 const isComma = fmt.includes('comma') || fmt === 'comma';
                 const count = data ? (isComma ? data.split(',').length : data.trim().split('\\n').length) : 0;
                 document.getElementById('stats').innerText = \`SUCCESS: \${count} NODES FOUND\`;
-                document.getElementById('out').scrollIntoView({ behavior: 'smooth', block: 'center' });
+                if(!auto) document.getElementById('out').scrollIntoView({ behavior: 'smooth', block: 'center' });
                 showToast(\`成功获取 \${count} 个节点 IP\`, 'success');
             } catch(e) { showToast('获取数据失败，请重试', 'error'); console.error(e); }
         }
