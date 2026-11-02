@@ -1500,7 +1500,8 @@ video {
         .light { background-color: #f4f7f7; color: #0f172a; }
         .glass { border: 1px solid rgba(150,150,150,0.1); }
         .region-card { transition: all 0.2s; border: 2px solid transparent; }
-        .region-card.active { border-color: #14b8a6 !important; background-color: rgba(20,184,166,0.12) !important; transform: scale(1.05); font-weight: 700; box-shadow: 0 4px 12px rgba(20, 184, 166, 0.18); }
+        #regionGrid .region-card.active { border-color: #14b8a6 !important; background-color: rgba(20,184,166,0.16) !important; transform: scale(1.05); font-weight: 700; box-shadow: 0 4px 12px rgba(20, 184, 166, 0.18); position: relative; }
+        #regionGrid .region-card.active::after { content: '✓'; position: absolute; top: 1px; right: 6px; color: #14b8a6; font-size: 13px; font-weight: 700; }
         .fira { font-family: 'JetBrains Mono', ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; }
         .dropdown-menu { transform-origin: top right; transition: all 0.2s ease-out; transform: scale(0.95); opacity: 0; pointer-events: none; }
         .dropdown-menu.open { transform: scale(1); opacity: 1; pointer-events: auto; }
