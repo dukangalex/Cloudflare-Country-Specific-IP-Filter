@@ -1607,6 +1607,16 @@ main > div:nth-child(2), main > div:nth-child(3){min-height:0;display:flex;flex-
 #out{flex:1;height:auto !important;min-height:0;resize:none}
 }
 @media (max-width:920px){#regionGrid{max-height:none;overflow:visible}}
+/* Lucian UX/UI Prompt #008 · MIT License */
+.ipf-cp-ic{position:relative;display:inline-block;width:14px;height:14px;flex:none}
+.ipf-cp-ic svg{position:absolute;inset:0;width:14px;height:14px;transition:opacity .25s ease,transform .45s cubic-bezier(.34,1.56,.64,1)}
+.ipf-cp-ic .ipf-cp-ok{opacity:0;transform:scale(.4) rotate(-30deg)}
+.ipf-cp-ic .ipf-cp-ok path{stroke-dasharray:22;stroke-dashoffset:22;transition:stroke-dashoffset .4s ease .1s}
+button.ipf-cp.is-copied{border-color:rgba(16,185,129,.65)!important;color:#10b981!important;background:rgba(16,185,129,.13)!important}
+button.ipf-cp.is-copied .ipf-cp-i{opacity:0;transform:scale(.4) rotate(30deg)}
+button.ipf-cp.is-copied .ipf-cp-ok{opacity:1;transform:none}
+button.ipf-cp.is-copied .ipf-cp-ok path{stroke-dashoffset:0}
+@media (prefers-reduced-motion: reduce){.ipf-cp-ic svg,.ipf-cp-ic .ipf-cp-ok path{transition:none}}
 </style>
 </head>
 <body class="light min-h-screen pb-10" onclick="closeAllDropdowns(event)">
@@ -1674,7 +1684,7 @@ class="group h-12 flex items-center rounded-2xl bg-white dark:bg-slate-800 borde
                         <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="w-3.5 h-3.5 text-slate-400 mr-2"><polygon points="22 3 2 3 10 12.46 10 19 14 21 14 12.46 22 3"/></svg><span class="text-[10px] font-bold text-slate-400 mr-2 whitespace-nowrap">MAX</span>
                         <input id="limitInput" type="number" min="0" value="10" class="w-10 bg-transparent text-xs font-bold text-center outline-none text-slate-700 dark:text-slate-200 font-mono focus:text-blue-500 transition-colors" placeholder="0">
                     </div>
-                    <button onclick="copy()" class="flex-1 sm:flex-none bg-white dark:bg-slate-700 border border-slate-200 dark:border-slate-600 text-slate-700 dark:text-slate-200 px-4 py-2 rounded-lg font-bold text-xs hover:bg-slate-50 dark:hover:bg-slate-600 transition flex items-center justify-center gap-2 shadow-sm"><svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class=""><rect width="14" height="14" x="8" y="8" rx="2" ry="2"/><path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2"/></svg> 复制全部</button>
+                    <button id="copyAllBtn" onclick="copy()" class="ipf-cp flex-1 sm:flex-none bg-white dark:bg-slate-700 border border-slate-200 dark:border-slate-600 text-slate-700 dark:text-slate-200 px-4 py-2 rounded-lg font-bold text-xs hover:bg-slate-50 dark:hover:bg-slate-600 transition flex items-center justify-center gap-2 shadow-sm"><span class="ipf-cp-ic"><svg class="ipf-cp-i" xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect width="14" height="14" x="8" y="8" rx="2" ry="2"/><path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2"/></svg><svg class="ipf-cp-ok" xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"><path d="M5.5 12.5l4.2 4.2L18.5 8"/></svg></span> 复制全部</button>
                     
                     <div class="relative group z-20 flex-1 sm:flex-none">
                         <button id="linkBtn" onclick="toggleLinkMenu(event)" class="w-full sm:w-auto bg-slate-900 dark:bg-blue-600 text-white px-5 py-2 rounded-lg font-bold text-xs hover:opacity-80 transition flex items-center justify-center gap-2 shadow-lg shadow-blue-500/20"><svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class=""><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/></svg> API 地址</button>
@@ -1806,17 +1816,26 @@ class="group h-12 flex items-center rounded-2xl bg-white dark:bg-slate-800 borde
                 showToast(\`成功获取 \${count} 个节点 IP\`, 'success');
             } catch(e) { showToast('获取数据失败，请重试', 'error'); console.error(e); }
         }
+        function flashCopyBtn() {
+            const b = document.getElementById('copyAllBtn');
+            if (!b) return;
+            b.classList.remove('is-copied');
+            void b.offsetWidth;
+            b.classList.add('is-copied');
+            clearTimeout(window.__ipfCpT);
+            window.__ipfCpT = setTimeout(function () { b.classList.remove('is-copied'); }, 1800);
+        }
         async function copy() {
             const out = document.getElementById('out');
             if(!out.value) { showToast('没有内容可复制', 'error'); return; }
             try {
                 await navigator.clipboard.writeText(out.value);
-                showToast('内容已复制到剪贴板', 'success');
+                flashCopyBtn(); showToast('内容已复制到剪贴板', 'success');
             } catch(e) {
                 out.select();
                 try {
                     document.execCommand('copy');
-                    showToast('内容已复制到剪贴板', 'success');
+                    flashCopyBtn(); showToast('内容已复制到剪贴板', 'success');
                 } catch(e2) {
                     showToast('自动复制失败, 请长按/右键手动复制', 'error');
                 }
